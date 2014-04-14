@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #CST:xkaras27
 
-import argparse, sys, os
+import argparse, sys, os, re
 
 class Parsing():
     """
@@ -106,35 +106,358 @@ class ProcessText():
         self.arguments = self.parse.run()
 
     def check_input(self):
+        """
+        Dle prepinace input urci soubory k prohledani
+        """
+        # S prohledavanim do hloubky.
         if self.arguments['nosubdir'] == False:
+            # Soucasny adresar.
             if self.arguments['input'] == None:
-                self.files = [os.path.join(r,f) for r,d,fs in os.walk(os.getcwd()) for f in fs if f.endswith('.c') or f.endswith('.h')]
+                self.files = [os.path.join(r,f) for r,d,fs in os.walk(os.getcwd()) \
+                for f in fs if f.endswith('.c') or f.endswith('.h')]
+            # Adresar predany argumenty.
             elif os.path.isdir(self.arguments['input']):
-                self.files = [os.path.abspath(os.path.join(r,f)) for r,d,fs in os.walk(self.arguments['input']) for f in fs if os.path.isfile(f) and f.endswith('.c') or f.endswith('.h')]
+                self.files = [os.path.abspath(os.path.join(r,f)) for r,d,fs in os.walk(self.arguments['input']) \
+                for f in fs if f.endswith('.c') or f.endswith('.h')]
+            # Soubor predany argumenty.
             else:
                 self.files = [self.arguments['input']]
+        # Bez prohledavani do hloubky.
         else:
+            # Soucasny adresar.
             if self.arguments['input'] == None:
-                self.files = [os.path.abspath(f) for f in os.listdir(os.getcwd()) if os.path.isfile(f) and (f.endswith('.c') or f.endswith('.h'))]
+                self.files = [os.path.abspath(f) for f in os.listdir(os.getcwd()) \
+                if os.path.isfile(f) and (f.endswith('.c') or f.endswith('.h'))]
+            # Adresar predany argumenty.
             elif os.path.isdir(self.arguments['input']):
-                self.files = [os.path.abspath(f) for f in os.listdir(self.arguments['input']) if f.endswith('.c') or f.endswith('.h')] #TODO: nelze testovat, zda je soubor
+                self.files = [os.path.abspath(os.path.join(os.path.abspath(self.arguments['input']), f)) \
+                for f in os.listdir(os.path.abspath(self.arguments['input'])) \
+                if f.endswith('.c') or f.endswith('.h')] #TODO: nelze testovat, zda je soubor
             else:
-                print('--input=file & --nosubdir cannot be combined', file=sys.stderr)
+                print('Bad parameters', file=sys.stderr)
                 sys.exit(1)
-        
-    def check_output(self):
-        if self.arguments['output'] == None:
-            self.output = 'sys.stdout'
-        else:
-            self.output = os.path.abspath(self.arguments['output'])
 
     def process_input(self):
-        
+        result = 0
+        total = 0
+        for file in self.files:
+            try:
+                with open(file) as f:
+                    file_content = f.read()
+                    # self.delete_strings(file_content)
+                    # print(str(self.find_pattern(file_content)))
+                    # self.delete_macros(file_content)
 
-    def find_pattern(self):
+                    result = self.find_comments(file_content)
+                    total += result
+                    out = file + " " + comments + "\nCELKEM: " + comments + '\n'
+
+            
+                    o.write(out)
+
+                    
+                    # print("CELKEM: " + comments)
+            except EnvironmentError:
+                print("Couldn't read input file [" + file + "]", file=sys.stderr)
+                sys.exit(2)
+
+    def print_result(self, output_string):
+        if self.arguments['output'] == None:
+            print(output_string)
+        else:
+            try:
+                with open(self.arguments['output'], 'w') as o:
+                    o.write(output_string)
+            except EnvironmentError:
+                print("Couldn't read output file [" + self.arguments['output'] + "]", file=sys.stderr)
+                    sys.exit(3)
+
+
+
+    def find_pattern(self, file_content):
+        i = 0;
+        regex = re.compile(self.arguments['pattern'])
+        for line in file_content.split('\n'):
+            found = regex.findall(line)
+            if(found):
+                i += len(found)
+        return i
+
+    def key_words(self, file_content):
         pass
+
+    def delete_macros(self, file_content):
+        multi_line_macro = re.compile(r'^\s*#.*\\\s*$')
+        one_line_macro = re.compile(r'^\s*#.*$')
+        continuous_macro = re.compile(r'^.*\\\s*$')
+        final_string = ""
+        # Bylo na predchozim radku makro?
+        previous = False
+
+        for line in file_content.split('\n'):
+            if not previous:
+                if(multi_line_macro.match(line)):
+                    previous = True
+                    continue
+
+                if(one_line_macro.match(line)):
+                    continue
+            else:
+                if(continuous_macro.match(line)):
+                    continue
+                else:
+                    previous = False
+                    continue
+            final_string += line + '\n'
+        return final_string
+
+    def delete_strings(self, file_content):
+        INIT = 0
+        S_STRING = 1
+        state = INIT
+        final_string = ""
+
+        for char in file_content:
+            if state == INIT:
+                if char == '"':
+                    state = S_STRING
+                else:
+                    final_string += char
+
+            elif state == S_STRING:
+                if char == '"':
+                    state = INIT
+        return final_string
+
+    def delete_literals(self, file_content):
+        INIT = 0
+        S_LITERAL = 1
+        state = INIT
+        final_string = ""
+
+        for char in file_content:
+            if state == INIT:
+                if char == "'":
+                    state = S_LITERAL
+                else:
+                    final_string += char
+
+            elif state == S_LITERAL:
+                if char == "'":
+                    state = INIT
+        return final_string
+
+    def find_comments(self, file_content):
+        i = 0
+        INIT = 0
+        COM1 = 1
+        COM2 = 2
+        COM3 = 3
+        COM4 = 4
+        COM5 = 5
+        STRING_S = 6
+        COM2_2 = 7
+        state = INIT
+
+        for char in file_content:
+
+            if state == INIT:
+                if char == '/':
+                    state = COM1
+                    i += 1
+                elif char == '"':
+                    state = STRING_S
+
+            elif state == COM1:
+                if char == '/':
+                    state = COM2
+                    i += 1
+                elif char == '*':
+                    state = COM3
+                    i += 1
+                elif char == '\\':
+                    state = COM5
+                    i += 1
+                else:
+                    state = INIT
+                    i -= 1
+
+            elif state == COM2:
+                if char == '\n':
+                    state = INIT
+                    i += 1
+                elif char == '\\':
+                    state = COM2_2
+                    i += 1
+                else:
+                    i += 1
+
+            elif state == COM2_2:
+                if char == ' ' or char == '\t':
+                    i += 1
+                else:
+                    state = COM2
+                    i += 1
+
+            elif state == COM3:
+                i += 1
+                if char == '*':
+                    state = COM4
+
+            elif state == COM4:
+                i += 1
+                if char == '/':
+                    state = INIT
+                elif char == '*':
+                    continue
+                else:
+                    state = COM3
+
+            elif state == STRING_S:
+                if char == '"':
+                    state = INIT
+
+            elif state == COM5:
+                if char == ' ' or char == '\t':
+                    continue
+                elif char == '\n':
+                    state = COM1
+                else:
+                    state = INIT
+
+        return i
+        # is_comment = False
+        # One line comment --> True. Multiline --> False.
+        # one_liner = True
+        # previous = False
+        # S_INIT = 0
+        # S_1 = 1
+        # S_2 = 2
+        # S_3 = 3
+        # S_4 = 4
+        # S_STRING_S = 5
+        # S_STRING_E = 6
+        # S_2_S = 7
+
+        # state = S_INIT
+
+        # for char in file_content:
+        #     # INIT
+        #     if state == S_INIT:
+        #         if char == '/':
+        #             state = S_1
+        #             i += 1
+        #         elif char == '"':
+        #             state = S_STRING_S
+
+        #     # SCOM1
+        #     elif state == S_1:
+        #         if char == '/':
+        #             i += 1
+        #             state = S_2
+        #         elif char == '*':
+        #             i += 1
+        #             state = S_3
+        #         elif char == '\\':
+        #             i += 1
+        #             state = S_2_S
+        #         else:
+        #             i -= 1
+        #             state = S_INIT
+
+        #     # SCOM2
+        #     elif state == S_2:
+        #         if char == '\n':
+        #             i += 1
+        #             state = S_INIT
+        #         elif char == '\\':
+        #             i += 1
+        #             state = S_2_S
+        #         else:
+        #             i += 1
+        #             state = S_2
+
+        #     # SCOM2_POM
+        #     elif state == S_2_S:
+        #         i += 1
+        #         state = S_2
+
+
+        #     elif state == S_3:
+        #         if char == '*':
+        #             i += 1
+        #             state = S_4
+        #         else:
+        #             i += 1
+        #             state = S_3
+
+        #     elif state == S_4:
+        #         if char == '/':
+        #             i += 1
+        #             state = S_INIT
+        #         elif char == '*':
+        #             i += 1
+        #             state = S_4
+        #         else:
+        #             i += 1
+        #             state = S_3
+
+
+        #     elif state == S_STRING_S:
+        #         if char == '"':
+        #             state = S_INIT
+
+        
+            #     elif char == '\\':
+            #         state = S_STRING_E
+
+            # elif state == S_STRING_E:
+            #     if char == '\n':
+            #         state = S_STRING_S
+
+
+
+
+
+
+
+
+        #     if char == '\n':
+        #         print()
+        #         print("Znaku: " + str(i))
+
+        #     if not is_comment:
+        #         if previous == False and char == '/':
+        #             previous = True
+        #         elif previous == True and char == '/':
+        #             is_comment = True
+        #             one_liner = True
+        #             previous = False
+        #             i += 2
+        #             print("//", end="")
+        #         elif previous == True and char == '*':
+        #             is_comment = True
+        #             one_liner = False
+        #             previous = False
+        #             i += 2
+        #             print("/*", end="")
+        #         elif previous == True and char != '*' and char != '/':
+        #             previous = False
+        #     else:
+        #         i += 1
+        #         print(char, end="")
+        #         if one_liner and char == '\n':
+        #             is_comment = False
+        #         if not one_liner and char == '*':
+        #             previous = True
+        #         if previous and not one_liner and char == '/':
+        #             is_comment = False
+        #             previous = False
+
+
 
 if __name__ == '__main__':
     initialiser = ProcessText()
     initialiser.check_input()
     initialiser.check_output()
+    initialiser.process_input()
