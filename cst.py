@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 #CST:xkaras27
 
-import argparse, sys, os, re
+import argparse, sys, os, re, codecs
 
 class Parsing():
     """
@@ -14,7 +15,8 @@ class Parsing():
         a slovnik, ve kterem jsou ulozeny konkretni
         parametry programu.
         """
-        self.parser = argparse.ArgumentParser(add_help=False, description='Process CStats commands')
+        self.parser = argparse.ArgumentParser(add_help=False, \
+            description='Process CStats commands')
         self.result_values = { 'input' : None,
                                'output' : None,
                                'nosubdir' : False,
@@ -59,7 +61,8 @@ class Parsing():
             if len(self.arguments.switch) == 1:
                 self.result_values['switch'] = self.arguments.switch[0]
             else:
-                print('Switch [-' + self.arguments.switch[0] + '] is ambiguous', file=sys.stderr)
+                print('Switch [-' + self.arguments.switch[0] + '] is ambiguous', \
+                    file=sys.stderr)
                 sys.exit(1)
 
         #absolutni cesta
@@ -67,7 +70,8 @@ class Parsing():
             if len(self.arguments.p) == 1:
                 self.result_values['p'] = True
             else:
-                print('Switch [-' + self.arguments.p[0] + '] is ambiguous', file=sys.stderr)
+                print('Switch [-' + self.arguments.p[0] + '] is ambiguous', \
+                    file=sys.stderr)
                 sys.exit(1)
 
         #pattern
@@ -75,7 +79,8 @@ class Parsing():
             if len(self.arguments.pattern) == 1:
                 self.result_values['pattern'] = self.arguments.pattern[0]
             else:
-                print('Switch [-' + self.arguments.p[0] + '] is ambiguous', file=sys.stderr)
+                print('Switch [-' + self.arguments.p[0] + '] is ambiguous', \
+                    file=sys.stderr)
                 sys.exit(1)
 
         #input
@@ -101,6 +106,16 @@ class ProcessText():
     """
     Nastaveni pozadovanych akci i samotne prochazeni textu.
     """
+    key_words = ['auto', 'break', 'case', 'char', 'const', 'continue',
+                 'default', 'do', 'double', 'else', 'enum', 'extern',
+                 'float', 'for', 'goto','if', 'inline', 'int', 'long',
+                 'register', 'restrict', 'return', 'short', 'signed',
+                 'sizeof', 'static', 'struct', 'switch','typedef',
+                 'union', 'unsigned', 'void', 'volatile', 'while',
+                 '_Bool', '_Complex', '_Imaginary' ]
+
+
+
     def __init__(self):
         self.parse = Parsing()
         self.arguments = self.parse.run()
@@ -117,11 +132,12 @@ class ProcessText():
                 for f in fs if f.endswith('.c') or f.endswith('.h')]
             # Adresar predany argumenty.
             elif os.path.isdir(self.arguments['input']):
-                self.files = [os.path.abspath(os.path.join(r,f)) for r,d,fs in os.walk(self.arguments['input']) \
+                self.files = [os.path.abspath(os.path.join(r,f)) for r,d,fs in \
+                os.walk(self.arguments['input']) \
                 for f in fs if f.endswith('.c') or f.endswith('.h')]
             # Soubor predany argumenty.
             else:
-                self.files = [self.arguments['input']]
+                self.files = [os.path.abspath(self.arguments['input'])]
         # Bez prohledavani do hloubky.
         else:
             # Soucasny adresar.
@@ -138,55 +154,211 @@ class ProcessText():
                 sys.exit(1)
 
     def process_input(self):
+        """
+        Pruchod analizovanymi soubory a volani metod
+        k provedeni analizy nad danym souborem.
+        """
         result = 0
-        total = 0
-        for file in self.files:
+        self.total = 0
+        self.data = {}
+        for source_file in self.files:
             try:
-                with open(file) as f:
+                with codecs.open(source_file, 'r', 'iso-8859-2') as f:
                     file_content = f.read()
-                    # self.delete_strings(file_content)
-                    # print(str(self.find_pattern(file_content)))
-                    # self.delete_macros(file_content)
 
-                    result = self.find_comments(file_content)
-                    total += result
-                    out = file + " " + comments + "\nCELKEM: " + comments + '\n'
+                    # Pattern.
+                    if self.arguments['pattern'] != None:
+                        result = self.find_pattern(file_content)
+                    # Klicova slova.
+                    elif self.arguments['switch'] == 'k':
+                        self.find_comments(file_content)
+                        result = self.identifiers(self.delete_backslash(self.delete_strings(self.delete_macros(self.delete_literals(self.no_comments)))), False)
+                    # Identifikatory
+                    elif self.arguments['switch'] == 'i':
+                        self.find_comments(file_content)
+                        result = self.identifiers(self.delete_backslash(self.delete_strings(self.delete_macros(self.no_comments))), True)
+                        
+                        # result = self.key_words(self.delete_strings(self.delete_macros(self.no_comments)))
+                    # Komentare.
+                    elif self.arguments['switch'] == 'c':
+                        result = self.find_comments(file_content)
 
-            
-                    o.write(out)
+                    elif self.arguments['switch'] == 'o':
+                        sys.exit(99)
+                    # Aktualizace poctu vyskytu.
+                    self.data[source_file] = result
+                    self.total += result
 
-                    
-                    # print("CELKEM: " + comments)
             except EnvironmentError:
-                print("Couldn't read input file [" + file + "]", file=sys.stderr)
-                sys.exit(2)
+                print("Couldn't read input file [" + source_file + "]", file=sys.stderr)
+                if os.path.isdir(self.arguments['input']):
+                    sys.exit(21)
+                else:    
+                    sys.exit(2)
 
-    def print_result(self, output_string):
+    def form_output(self):
+        """
+        Vytvoreni vystupniho retezce programu.
+        """
+        max_key = 0
+        max_value = 0
+        final_string = ""
+
+        # Pokud byl zadan prepina -p, oreze se cesta souboru.
+        if self.arguments['p']:
+            temp = {}
+            for key, value in self.data.items():
+                temp[key.split('/')[-1]] = value
+            self.data = temp
+
+        # Nalezeni nejdelsiho radku.
+        for key, value in self.data.items():
+            if max_key < len(key):
+                max_key = len(key)
+            if max_value < len(str(value)):
+                max_value = len(str(value))
+
+        # Pokud je radek prilis kratky, pouzije se imlicitni hodnota.
+        if max_key < 7:
+            max_key = 7
+
+        # Serazeni vystupu.
+        for key in sorted(self.data.keys()):
+            final_string += key  + ' ' * int(max_key-len(key)+1) + ' ' \
+            * int(max_value - len(str(self.data[key]))) + str(self.data[key]) + '\n'
+        
+        final_string += "CELKEM: " + ' ' *  int(max_key-len("CELKEM: ")+1) + ' ' \
+                        * int(max_value - len(str(self.total))) + str(self.total) + '\n'
+        return final_string
+
+    def print_output(self):
+        """
+        Vytisknuti vystupu programu bud na STDOUT
+        nebo do souboru.
+        """
+        output_string = self.form_output()
+
         if self.arguments['output'] == None:
             print(output_string)
         else:
             try:
-                with open(self.arguments['output'], 'w') as o:
+                with open(os.path.abspath(self.arguments['output']), 'w') as o:
                     o.write(output_string)
             except EnvironmentError:
                 print("Couldn't read output file [" + self.arguments['output'] + "]", file=sys.stderr)
-                    sys.exit(3)
-
-
-
+                sys.exit(3)
+ 
     def find_pattern(self, file_content):
-        i = 0;
-        regex = re.compile(self.arguments['pattern'])
-        for line in file_content.split('\n'):
-            found = regex.findall(line)
-            if(found):
-                i += len(found)
-        return i
+        """
+        Prepinac -w.
+        """
+        return file_content.count(self.arguments['pattern'])
 
-    def key_words(self, file_content):
-        pass
+    def identifiers(self, file_content, to_be_returned):
+        INIT = 0
+        IDENTIFIER = 1
+        state = INIT
+        clean_text = ""
+
+        for line in file_content.split('\n'):
+            line = re.sub(r'\(', r' ', line)
+            line = re.sub(r'\)', r' ', line)
+            line = re.sub(r'\{', r' ', line)
+            line = re.sub(r'\}', r' ', line)
+            line = re.sub(r'\*', r' ', line)
+            line = re.sub(r';', r' ', line)
+            line = re.sub(r',', r' ', line)
+            line = re.sub(r']', r' ', line)
+            line = re.sub(r'\[', r' ', line)
+            line = re.sub(r'\.', r' ', line)
+            line = re.sub(r'-', r' ', line)
+            line = re.sub(r'\+', r' ', line)
+            line = re.sub(r':', r' ', line)
+            line = re.sub(r'!', r' ', line)
+            line = re.sub(r'\|', r' ', line)
+            line = re.sub(r'/', r' ', line)
+            line = re.sub(r'>', r' ', line)
+            line = re.sub(r'<', r' ', line)
+            line = re.sub(r'%', r' ', line)
+            line = re.sub(r'\^', r' ', line)
+            line = re.sub(r'&', r' ', line)
+            line = re.sub(r'=', r' ', line)
+            line = re.sub(r'\?', r' ', line)
+            line = re.sub(r'~', r' ', line)
+
+            clean_text += line
+
+        found_words = []
+        for word in clean_text.split():
+            for i in range(len(word)):
+
+                if state == INIT:
+                    if i == 0 and len(word) == 1 and (word[0].isalpha() or word[0] == '_'):
+                        print(word)
+                        # Je to identifikator.
+                        found_words.append(word)
+
+                    elif word[i].isalpha() or word[i] == '_':
+                        state = IDENTIFIER
+                    else:
+                        break
+
+                elif state == IDENTIFIER:
+                    if i == len(word)-1:
+                        if word[i].isalnum() or word[i] == '_':
+                            # Je to identifikator.
+                            found_words.append(word)
+                            state = INIT
+                        else:
+                            state = INIT
+                    else:
+                        if word[i].isalnum() or word[i] == '_':
+                            pass # Je to identifikator. 
+                        else:
+                            state = INIT
+
+        found_key_words = 0
+        found_identifiers = 0
+        for i in found_words:
+            if i in self.key_words:
+                found_key_words += 1
+            else:
+                found_identifiers += 1
+
+        if to_be_returned:
+            return found_identifiers
+        else:
+            return found_key_words
+
+    def delete_backslash(self, file_content):
+        """
+        Odstraneni zpetnych lomitek (escape sekvenci).
+        Pred volanim teto metody je treba odstranit stringy.
+        """
+        INIT = 0
+        BACKSLASH = 1
+        state = INIT
+        final_string = ""
+
+        for char in file_content:
+            if state == INIT:
+                if char == '\\':
+                    state = BACKSLASH
+                else:
+                    final_string += char
+            elif state == BACKSLASH:
+                if char == '\n':
+                    state = INIT
+
+        # print(final_string)
+        return final_string
 
     def delete_macros(self, file_content):
+        """
+        Odstraneni maker ze zdrojoveho kodu.
+        Implementovano pomoci regularnich
+        vyrazu jazyka Python.
+        """
         multi_line_macro = re.compile(r'^\s*#.*\\\s*$')
         one_line_macro = re.compile(r'^\s*#.*$')
         continuous_macro = re.compile(r'^.*\\\s*$')
@@ -195,6 +367,8 @@ class ProcessText():
         previous = False
 
         for line in file_content.split('\n'):
+            # Pokud soucasny radek neni pokracovanim
+            # makra z predchoziho radku.
             if not previous:
                 if(multi_line_macro.match(line)):
                     previous = True
@@ -202,6 +376,7 @@ class ProcessText():
 
                 if(one_line_macro.match(line)):
                     continue
+            # Je pokracovanim z predchoziho radku.
             else:
                 if(continuous_macro.match(line)):
                     continue
@@ -212,6 +387,10 @@ class ProcessText():
         return final_string
 
     def delete_strings(self, file_content):
+        """
+        Odstraneni retezcu ze zdrojoveho kodu.
+        Implementovano pomoci DFA.
+        """
         INIT = 0
         S_STRING = 1
         state = INIT
@@ -230,6 +409,10 @@ class ProcessText():
         return final_string
 
     def delete_literals(self, file_content):
+        """
+        Odstraneni znakovych literalu ze zdrojoveho kodu.
+        Implementovano pomoci DFA.
+        """
         INIT = 0
         S_LITERAL = 1
         state = INIT
@@ -248,7 +431,14 @@ class ProcessText():
         return final_string
 
     def find_comments(self, file_content):
+        """
+        Spocitani znaku komentare.
+        Implementovano pomoci DFA.
+        Zaroven je formovan retezec neobsahujici komentare.
+        """
         i = 0
+        i_aux = 0
+        final_string = ""
         INIT = 0
         COM1 = 1
         COM2 = 2
@@ -258,30 +448,43 @@ class ProcessText():
         STRING_S = 6
         COM2_2 = 7
         state = INIT
+        flag = False  # V hranicnim pripade dovoluje snizit promennou i.
 
         for char in file_content:
 
+            # Zacatek v INIT.
             if state == INIT:
+                final_string += char
                 if char == '/':
                     state = COM1
                     i += 1
                 elif char == '"':
                     state = STRING_S
 
+            # Jedno lomitko '/'.
             elif state == COM1:
                 if char == '/':
+                    final_string = final_string[:-1]
+                    if flag:
+                        final_string = final_string[:-i_aux]
+                        i += i_aux
+                        i_aux = 0
+                        flag = False
                     state = COM2
                     i += 1
                 elif char == '*':
+                    final_string = final_string[:-1]
                     state = COM3
                     i += 1
                 elif char == '\\':
+                    final_string += char
                     state = COM5
                     i += 1
                 else:
                     state = INIT
                     i -= 1
 
+            # Dve lomitka '/'.
             elif state == COM2:
                 if char == '\n':
                     state = INIT
@@ -292,6 +495,7 @@ class ProcessText():
                 else:
                     i += 1
 
+            # Pokracovani na dalsim radku.
             elif state == COM2_2:
                 if char == ' ' or char == '\t':
                     i += 1
@@ -299,165 +503,49 @@ class ProcessText():
                     state = COM2
                     i += 1
 
+            # Viceradkovy komentar - zacatek.
             elif state == COM3:
                 i += 1
                 if char == '*':
                     state = COM4
 
+            # Viceradkovy komentar - konec.
             elif state == COM4:
                 i += 1
                 if char == '/':
                     state = INIT
                 elif char == '*':
-                    continue
+                    pass
                 else:
                     state = COM3
 
+            # Preskoceni retezcu
             elif state == STRING_S:
+                final_string += char
                 if char == '"':
                     state = INIT
 
+            # Specialni pripad pouziti lomitka '\'
             elif state == COM5:
                 if char == ' ' or char == '\t':
-                    continue
+                    final_string += char
+                    pass
                 elif char == '\n':
+                    final_string += char
+                    flag = True
+                    i_aux += 1
                     state = COM1
                 else:
+                    final_string += char
                     state = INIT
-
+                #     i -= 1
+        self.no_comments = final_string
         return i
-        # is_comment = False
-        # One line comment --> True. Multiline --> False.
-        # one_liner = True
-        # previous = False
-        # S_INIT = 0
-        # S_1 = 1
-        # S_2 = 2
-        # S_3 = 3
-        # S_4 = 4
-        # S_STRING_S = 5
-        # S_STRING_E = 6
-        # S_2_S = 7
-
-        # state = S_INIT
-
-        # for char in file_content:
-        #     # INIT
-        #     if state == S_INIT:
-        #         if char == '/':
-        #             state = S_1
-        #             i += 1
-        #         elif char == '"':
-        #             state = S_STRING_S
-
-        #     # SCOM1
-        #     elif state == S_1:
-        #         if char == '/':
-        #             i += 1
-        #             state = S_2
-        #         elif char == '*':
-        #             i += 1
-        #             state = S_3
-        #         elif char == '\\':
-        #             i += 1
-        #             state = S_2_S
-        #         else:
-        #             i -= 1
-        #             state = S_INIT
-
-        #     # SCOM2
-        #     elif state == S_2:
-        #         if char == '\n':
-        #             i += 1
-        #             state = S_INIT
-        #         elif char == '\\':
-        #             i += 1
-        #             state = S_2_S
-        #         else:
-        #             i += 1
-        #             state = S_2
-
-        #     # SCOM2_POM
-        #     elif state == S_2_S:
-        #         i += 1
-        #         state = S_2
-
-
-        #     elif state == S_3:
-        #         if char == '*':
-        #             i += 1
-        #             state = S_4
-        #         else:
-        #             i += 1
-        #             state = S_3
-
-        #     elif state == S_4:
-        #         if char == '/':
-        #             i += 1
-        #             state = S_INIT
-        #         elif char == '*':
-        #             i += 1
-        #             state = S_4
-        #         else:
-        #             i += 1
-        #             state = S_3
-
-
-        #     elif state == S_STRING_S:
-        #         if char == '"':
-        #             state = S_INIT
-
-        
-            #     elif char == '\\':
-            #         state = S_STRING_E
-
-            # elif state == S_STRING_E:
-            #     if char == '\n':
-            #         state = S_STRING_S
-
-
-
-
-
-
-
-
-        #     if char == '\n':
-        #         print()
-        #         print("Znaku: " + str(i))
-
-        #     if not is_comment:
-        #         if previous == False and char == '/':
-        #             previous = True
-        #         elif previous == True and char == '/':
-        #             is_comment = True
-        #             one_liner = True
-        #             previous = False
-        #             i += 2
-        #             print("//", end="")
-        #         elif previous == True and char == '*':
-        #             is_comment = True
-        #             one_liner = False
-        #             previous = False
-        #             i += 2
-        #             print("/*", end="")
-        #         elif previous == True and char != '*' and char != '/':
-        #             previous = False
-        #     else:
-        #         i += 1
-        #         print(char, end="")
-        #         if one_liner and char == '\n':
-        #             is_comment = False
-        #         if not one_liner and char == '*':
-        #             previous = True
-        #         if previous and not one_liner and char == '/':
-        #             is_comment = False
-        #             previous = False
-
 
 
 if __name__ == '__main__':
     initialiser = ProcessText()
     initialiser.check_input()
-    initialiser.check_output()
     initialiser.process_input()
+    initialiser.print_output()
+
