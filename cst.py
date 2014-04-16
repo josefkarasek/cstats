@@ -39,8 +39,8 @@ class Parsing():
 
             sys.exit(0)
 
-        self.parser.add_argument('--input', nargs=1, action='store')
-        self.parser.add_argument('--output', nargs=1, action='store')
+        self.parser.add_argument('--input', action='append')
+        self.parser.add_argument('--output', action='append')
         self.parser.add_argument('--nosubdir', action='append_const', const='1')
         self.parser.add_argument('-p', action='append_const', const='1')
 
@@ -48,7 +48,7 @@ class Parsing():
         self.action_group.add_argument('-k', action='append_const', const='k', dest='switch')
         self.action_group.add_argument('-o', action='append_const', const='o', dest='switch')
         self.action_group.add_argument('-i', action='append_const', const='i', dest='switch')
-        self.action_group.add_argument('-w', nargs=1, action='store', dest='pattern')
+        self.action_group.add_argument('-w', action='append', dest='pattern')
         self.action_group.add_argument('-c', action='append_const', const='c', dest='switch')
 
         try:
@@ -61,7 +61,7 @@ class Parsing():
             if len(self.arguments.switch) == 1:
                 self.result_values['switch'] = self.arguments.switch[0]
             else:
-                print('Switch [-' + self.arguments.switch[0] + '] is ambiguous', \
+                print('Switch [-' + self.arguments.switch[0] + '] was given more than once.', \
                     file=sys.stderr)
                 sys.exit(1)
 
@@ -70,7 +70,7 @@ class Parsing():
             if len(self.arguments.p) == 1:
                 self.result_values['p'] = True
             else:
-                print('Switch [-' + self.arguments.p[0] + '] is ambiguous', \
+                print('Switch [-' + self.arguments.p[0] + '] was given more than once.', \
                     file=sys.stderr)
                 sys.exit(1)
 
@@ -79,24 +79,33 @@ class Parsing():
             if len(self.arguments.pattern) == 1:
                 self.result_values['pattern'] = self.arguments.pattern[0]
             else:
-                print('Switch [-' + self.arguments.p[0] + '] is ambiguous', \
+                print('Switch [-w] was given more than once.', \
                     file=sys.stderr)
                 sys.exit(1)
 
         #input
         if self.arguments.input != None:
-            self.result_values['input'] = self.arguments.input[0]
-
+            if len(self.arguments.input) == 1:
+                self.result_values['input'] = self.arguments.input[0]
+            else:
+                print('Switch [--input] was given more than once.', \
+                    file=sys.stderr)
+                sys.exit(1)
         #output
         if self.arguments.output != None:
-            self.result_values['output'] = self.arguments.output[0]
+            if len(self.arguments.output) == 1:
+                self.result_values['output'] = self.arguments.output[0]
+            else:
+                print('Switch [--output] was given more than once.', \
+                    file=sys.stderr)
+                sys.exit(1)
 
         #nosubdir
         if self.arguments.nosubdir != None:
             if len(self.arguments.nosubdir) == 1:
                 self.result_values['nosubdir'] = True
             else:
-                print('Switch [--nosubdir] is ambiguous', file=sys.stderr)
+                print('Switch [--nosubdir] was given more than once.', file=sys.stderr)
                 sys.exit(1)
 
         return self.result_values
@@ -172,19 +181,19 @@ class ProcessText():
                     # Klicova slova.
                     elif self.arguments['switch'] == 'k':
                         self.find_comments(file_content)
-                        result = self.identifiers(self.delete_backslash(self.delete_strings(self.delete_macros(self.delete_literals(self.no_comments)))), False)
+                        result = self.find_id_or_key(self.delete_backslash(self.delete_strings(self.delete_macros(self.delete_literals(self.no_comments)))), False)
                     # Identifikatory
                     elif self.arguments['switch'] == 'i':
                         self.find_comments(file_content)
-                        result = self.identifiers(self.delete_backslash(self.delete_strings(self.delete_macros(self.no_comments))), True)
+                        result = self.find_id_or_key(self.delete_backslash(self.delete_strings(self.delete_macros(self.no_comments))), True)
                         
                         # result = self.key_words(self.delete_strings(self.delete_macros(self.no_comments)))
                     # Komentare.
                     elif self.arguments['switch'] == 'c':
                         result = self.find_comments(file_content)
-
                     elif self.arguments['switch'] == 'o':
-                        sys.exit(99)
+                        self.find_comments(file_content)
+                        result = self.find_operators(self.delete_literals(self.delete_strings(self.delete_macros(self.no_comments))))
                     # Aktualizace poctu vyskytu.
                     self.data[source_file] = result
                     self.total += result
@@ -221,6 +230,8 @@ class ProcessText():
         # Pokud je radek prilis kratky, pouzije se imlicitni hodnota.
         if max_key < 7:
             max_key = 7
+        if max_value < len(str(self.total)):
+            max_value = len(str(self.total))
 
         # Serazeni vystupu.
         for key in sorted(self.data.keys()):
@@ -252,9 +263,31 @@ class ProcessText():
         """
         Prepinac -w.
         """
-        return file_content.count(self.arguments['pattern'])
+        if self.arguments['pattern'] != '':
+            return file_content.count(self.arguments['pattern'])
+        else:
+            return 0
 
-    def identifiers(self, file_content, to_be_returned):
+    def find_operators(self, file_content):
+        """
+
+        """
+        print(file_content)
+        return 0
+
+    def find_id_or_key(self, file_content, to_be_returned):
+        """
+        Spocitani vyskytu identifikatoru nebo klicovych slov.
+        Implementovano pomoci konecneho automatu.
+        Nejprve jsou odstraneny vsechny nezadouci operatory.
+        Pote jsou hledany vsechny identifikatory. Nalezene
+        identifkatory jsou porovnany s tabulkou klicovych
+        slov. Pocita se tedy vyskyt identifikatoru i klicovych
+        slov zaroven.
+
+        @param to_be_returned Pokud je True, vraci se identifkatory,
+        jinak se vraci pocet vyskytu klicovych slov.
+        """
         INIT = 0
         IDENTIFIER = 1
         state = INIT
@@ -294,7 +327,7 @@ class ProcessText():
 
                 if state == INIT:
                     if i == 0 and len(word) == 1 and (word[0].isalpha() or word[0] == '_'):
-                        print(word)
+
                         # Je to identifikator.
                         found_words.append(word)
 
