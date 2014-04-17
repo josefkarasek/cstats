@@ -181,19 +181,23 @@ class ProcessText():
                     # Klicova slova.
                     elif self.arguments['switch'] == 'k':
                         self.find_comments(file_content)
-                        result = self.find_id_or_key(self.delete_backslash(self.delete_strings(self.delete_macros(self.delete_literals(self.no_comments)))), False)
+                        result = self.find_id_or_key(self.delete_backslash(self.delete_strings(\
+                            self.delete_macros(self.delete_literals(self.no_comments)))), False)
                     # Identifikatory
                     elif self.arguments['switch'] == 'i':
                         self.find_comments(file_content)
-                        result = self.find_id_or_key(self.delete_backslash(self.delete_strings(self.delete_macros(self.no_comments))), True)
+                        result = self.find_id_or_key(self.delete_backslash(self.delete_strings(\
+                            self.delete_macros(self.no_comments))), True)
                         
                         # result = self.key_words(self.delete_strings(self.delete_macros(self.no_comments)))
                     # Komentare.
                     elif self.arguments['switch'] == 'c':
                         result = self.find_comments(file_content)
+                    # Oeperatory
                     elif self.arguments['switch'] == 'o':
-                        self.find_comments(file_content)
-                        result = self.find_operators(self.delete_literals(self.delete_strings(self.delete_macros(self.no_comments))))
+                        self.find_comments(self.delete_macros(file_content))
+                        result = self.find_operators(self.delete_literals(self.delete_strings(\
+                            self.delete_macros(self.delete_backslash(self.no_comments)))))
                     # Aktualizace poctu vyskytu.
                     self.data[source_file] = result
                     self.total += result
@@ -253,7 +257,7 @@ class ProcessText():
             print(output_string)
         else:
             try:
-                with open(os.path.abspath(self.arguments['output']), 'w') as o:
+                with codecs.open(os.path.abspath(self.arguments['output']), 'w', 'iso-8859-2') as o:
                     o.write(output_string)
             except EnvironmentError:
                 print("Couldn't read output file [" + self.arguments['output'] + "]", file=sys.stderr)
@@ -270,10 +274,334 @@ class ProcessText():
 
     def find_operators(self, file_content):
         """
-
+        Spocitani vyskytu operatoru.
+        Implementovano podle konecneho automatu.
         """
-        print(file_content)
-        return 0
+
+        # Odstraneni nezadouchich znaku.
+        clean_text = ""
+        for line in file_content.split('\n'):
+            # line = re.sub(r'\*\*+', r' ', line)
+            line = re.sub(r'\(', r' ', line)
+            line = re.sub(r'\)', r' ', line)
+            line = re.sub(r'\{', r' ', line)
+            line = re.sub(r'\}', r' ', line)
+            line = re.sub(r']', r' ', line)
+            line = re.sub(r'\[', r' ', line)
+            line = re.sub(r';', r' ', line)
+            line = re.sub(r'char\s*\*', r' ', line)
+            line = re.sub(r'short\s*\*', r' ', line)
+            line = re.sub(r'int\s*\*', r' ', line)
+            line = re.sub(r'long\s*\*', r' ', line)
+            line = re.sub(r'float\s*\*', r' ', line)
+            line = re.sub(r'double\s*\*', r' ', line)
+            line = re.sub(r'sizeof\s*\*', r' ', line)
+            line = re.sub(r',\s*\*', r' ', line)
+            line = re.sub(r'const\s*\*', r' ', line)
+
+            clean_text += line
+
+        # Stavy konecneho automatu.
+        INIT = 0
+        EX_MARK = 1
+        NOT_EQ = 2
+        GREATER = 3
+        SHIFT_R = 4
+        R_SHIFT_A = 5
+        GREATER_EQ = 6
+        LESS = 7
+        SHIFT_L = 8
+        L_SHIFT_A = 9
+        LESS_EQUAL = 10
+        PLUS = 11
+        INCREMENT = 12
+        PLUS_A = 13
+        MINUS = 14
+        MINUS_A = 15
+        DECREMENT = 16
+        STRUCT_ACCESS = 17
+        ASSIGNMENT = 18
+        EQUAL = 19
+        MODULO = 20
+        MODULO_A = 21
+        DIVISION = 22
+        DIVISION_A = 23
+        MULTIPLIC = 24
+        MULTIPLIC_A = 25
+        POWER = 26
+        POWER_A = 27
+        OR = 28
+        OR_A = 29
+        LOG_OR = 30
+        AND = 31
+        AND_A = 32
+        LOG_AND = 33
+        PERIOD = 34
+        DIGIT = 35
+        PERIOD_AUX = 36
+        MULTI_PARAM = 37
+        state = INIT
+
+        # Konecny automat.
+        operators = 0
+        for word in clean_text.split():
+            i = 0
+            while i < int(len(word)):
+                
+                if state == INIT:
+                    if word[i] == '!':
+                        operators += 1
+                        state = EX_MARK
+                    elif word[i] == '>':
+                        operators += 1
+                        state = GREATER
+                    elif word[i] == '<':
+                        operators += 1
+                        state = LESS
+                    elif word[i] == '+':
+                        operators += 1
+                        state = PLUS
+                    elif word[i] == '-':
+                        operators += 1
+                        state = MINUS
+                    elif word[i] == '=':
+                        operators += 1
+                        state = ASSIGNMENT
+                    elif word[i] == '%':
+                        operators += 1
+                        state = MODULO
+                    elif word[i] == '/':
+                        operators += 1
+                        state = DIVISION
+                    elif word[i] == '*':
+                        operators += 1
+                        state = MULTIPLIC
+                    elif word[i] == '^':
+                        operators += 1
+                        state = POWER
+                    elif word[i] == '|':
+                        operators += 1
+                        state = OR
+                    elif word[i] == '&':
+                        operators += 1
+                        state = AND
+                    elif word[i] == '.':
+                        operators += 1
+                        state = PERIOD
+
+                elif state == EX_MARK:
+                    if word[i] == '=':
+                        state = NOT_EQ
+                    else:
+                        i -= 1
+                        state = INIT
+                    
+                elif state == NOT_EQ:
+                    state = INIT
+                    i -= 1
+                    
+                elif state == GREATER:
+                    if word[i] == '=':
+                        state = GREATER_EQ
+                    elif word[i] == '>':
+                        state = SHIFT_R
+                    else:
+                        i -= 1
+                        state = INIT
+                    
+                elif state == SHIFT_R:
+                    if word[i] == '=':
+                        state = R_SHIFT_A
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == R_SHIFT_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == GREATER_EQ:
+                    state = INIT
+                    i -= 1
+
+                elif state == LESS:
+                    if word[i] == '=':
+                        state = LESS_EQUAL
+                    elif word[i] == '<':
+                        state = SHIFT_L
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == SHIFT_L:
+                    if word[i] == '=':
+                        state = L_SHIFT_A
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == L_SHIFT_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == LESS_EQUAL:
+                    state = INIT
+                    i -= 1
+
+                elif state == PLUS:
+                    if word[i] == '=':
+                        state = PLUS_A
+                    elif word[i] == '+':
+                        state = INCREMENT
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == INCREMENT:
+                    state = INIT
+                    i -= 1
+
+                elif state == PLUS_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == MINUS:
+                    if word[i] == '=':
+                        state = MINUS_A
+                    elif word[i] == '-':
+                        state = DECREMENT
+                    elif word[i] == '>':
+                        state = STRUCT_ACCESS
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == MINUS_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == DECREMENT:
+                    state = INIT
+                    i -= 1
+
+                elif state == STRUCT_ACCESS:
+                    state = INIT
+                    i -= 1
+
+                elif state == ASSIGNMENT:
+                    if word[i] == '=':
+                        state = EQUAL
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == EQUAL:
+                    state = INIT
+                    i -= 1
+
+                elif state == MODULO:
+                    if word[i] == '=':
+                        state = MODULO_A
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == MODULO_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == DIVISION:
+                    if word[i] == '=':
+                        state = DIVISION_A
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == DIVISION_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == MULTIPLIC:
+                    if word[i] == '=':
+                        state = MULTIPLIC_A
+                    if word[i] == '*':
+                        operators += 1
+                        state = INIT
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == MULTIPLIC_A:
+                    state =INIT
+                    i -= 1
+
+                elif state == POWER:
+                    if word[i] == '=':
+                        state = POWER_A
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == POWER_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == OR:
+                    if word[i] == '=':
+                        state = OR_A
+                    elif word[i] == '|':
+                        state = LOG_OR
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == OR_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == LOG_OR:
+                    state = INIT
+                    i -= 1
+
+                elif state == AND:
+                    if word[i] == '=':
+                        state = AND_A
+                    elif word[i] == '&':
+                        state = LOG_AND
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == AND_A:
+                    state = INIT
+                    i -= 1
+
+                elif state == LOG_AND:
+                    state = INIT
+                    i -= 1
+
+                elif state == PERIOD:
+                    if word[i].isdigit():
+                        operators -= 1
+                        state = INIT
+                    elif word[i] == '.':
+                        state = PERIOD_AUX
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == PERIOD_AUX:
+                    if word[i] == '.':
+                        state = MULTI_PARAM
+                    else:
+                        i -= 1
+                        state = INIT
+
+                elif state == MULTI_PARAM:
+                    state = INIT
+                i += 1
+                
+        return operators
 
     def find_id_or_key(self, file_content, to_be_returned):
         """
@@ -383,7 +711,6 @@ class ProcessText():
                 if char == '\n':
                     state = INIT
 
-        # print(final_string)
         return final_string
 
     def delete_macros(self, file_content):
@@ -562,7 +889,6 @@ class ProcessText():
             elif state == COM5:
                 if char == ' ' or char == '\t':
                     final_string += char
-                    pass
                 elif char == '\n':
                     final_string += char
                     flag = True
