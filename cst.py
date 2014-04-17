@@ -70,7 +70,7 @@ class Parsing():
             if len(self.arguments.p) == 1:
                 self.result_values['p'] = True
             else:
-                print('Switch [-' + self.arguments.p[0] + '] was given more than once.', \
+                print('Switch [-p] was given more than once.', \
                     file=sys.stderr)
                 sys.exit(1)
 
