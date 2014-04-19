@@ -22,7 +22,8 @@ class Parsing():
                                'nosubdir' : False,
                                'p' : False,
                                'switch' : None,
-                               'pattern' : None }
+                               'pattern' : None,
+                               's' : False }
 
     def run(self):
         """
@@ -43,6 +44,7 @@ class Parsing():
         self.parser.add_argument('--output', action='append')
         self.parser.add_argument('--nosubdir', action='append_const', const='1')
         self.parser.add_argument('-p', action='append_const', const='1')
+        self.parser.add_argument('-s', action='append_const', const='1')
 
         self.action_group = self.parser.add_mutually_exclusive_group(required=True)
         self.action_group.add_argument('-k', action='append_const', const='k', dest='switch')
@@ -56,6 +58,17 @@ class Parsing():
         except :
             sys.exit(1)
 
+        # bonus COM
+        if self.arguments.s != None:
+            if len(self.arguments.s) == 1:
+                if self.arguments.switch[0] == 'c':
+                    self.result_values['s'] = True
+                else:
+                    print('Switch [-s] can be combined only with [-c].', file=sys.stderr)
+                    sys.exit(1)
+            else:
+                print('Switch [-c] was given more than once.', file=sys.stderr)
+                sys.exit(1)
         #prepinace
         if self.arguments.switch != None:
             if len(self.arguments.switch) == 1:
@@ -123,8 +136,6 @@ class ProcessText():
                  'union', 'unsigned', 'void', 'volatile', 'while',
                  '_Bool', '_Complex', '_Imaginary' ]
 
-
-
     def __init__(self):
         self.parse = Parsing()
         self.arguments = self.parse.run()
@@ -174,28 +185,28 @@ class ProcessText():
             try:
                 with codecs.open(source_file, 'r', 'iso-8859-2') as f:
                     file_content = f.read()
-
                     # Pattern.
                     if self.arguments['pattern'] != None:
                         result = self.find_pattern(file_content)
                     # Klicova slova.
                     elif self.arguments['switch'] == 'k':
-                        self.find_comments(file_content)
+                        self.find_comments(self.delete_macros(file_content), False)
                         result = self.find_id_or_key(self.delete_backslash(self.delete_strings(\
                             self.delete_macros(self.delete_literals(self.no_comments)))), False)
                     # Identifikatory
                     elif self.arguments['switch'] == 'i':
-                        self.find_comments(file_content)
+                        self.find_comments(self.delete_macros(file_content), False)
                         result = self.find_id_or_key(self.delete_backslash(self.delete_strings(\
                             self.delete_macros(self.no_comments))), True)
-                        
-                        # result = self.key_words(self.delete_strings(self.delete_macros(self.no_comments)))
                     # Komentare.
                     elif self.arguments['switch'] == 'c':
-                        result = self.find_comments(file_content)
+                        if self.arguments['s'] == True:
+                            result = self.find_comments(file_content, True) 
+                        else:
+                            result = self.find_comments(file_content, False)
                     # Oeperatory
                     elif self.arguments['switch'] == 'o':
-                        self.find_comments(self.delete_macros(file_content))
+                        self.find_comments(self.delete_macros(file_content), False)
                         result = self.find_operators(self.delete_literals(self.delete_strings(\
                             self.delete_macros(self.delete_backslash(self.no_comments)))))
                     # Aktualizace poctu vyskytu.
@@ -790,7 +801,7 @@ class ProcessText():
                     state = INIT
         return final_string
 
-    def find_comments(self, file_content):
+    def find_comments(self, file_content, com):
         """
         Spocitani znaku komentare.
         Implementovano pomoci DFA.
@@ -807,6 +818,8 @@ class ProcessText():
         COM5 = 5
         STRING_S = 6
         COM2_2 = 7
+        MACRO = 8
+        MACRO_2 = 9
         state = INIT
         flag = False  # V hranicnim pripade dovoluje snizit promennou i.
 
@@ -820,6 +833,22 @@ class ProcessText():
                     i += 1
                 elif char == '"':
                     state = STRING_S
+                # Pokud se neresi rozsireni, makra se preskakuji.
+                elif char == '#' and not com:
+                    state = MACRO
+                    final_string = final_string[:-1]
+
+            # Nalezeni makra.
+            elif state == MACRO:
+                if char == '\\':
+                    state = MACRO_2
+                elif char == '\n':
+                    state = INIT
+
+            # Dvouradkove makro.
+            elif state == MACRO_2:
+                if char == '\n':
+                    state = MACRO
 
             # Jedno lomitko '/'.
             elif state == COM1:
