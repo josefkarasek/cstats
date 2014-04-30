@@ -1,4 +1,4 @@
 cstats
 ======
 
-IPP: programming assignment #2
+Principles of Programming Languages and OOP: programming assignment #2
